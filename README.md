@@ -1,109 +1,132 @@
-# New Nx Repository
+# Nest Kafka Event-Driven Demo
 
-<a alt="Nx logo" href="https://nx.dev" target="_blank" rel="noreferrer"><img src="https://raw.githubusercontent.com/nrwl/nx/master/images/nx-logo.png" width="45"></a>
+An event-driven backend built with NestJS, Apache Kafka, and Nx. This project demonstrates how a user-creation event can move through independent services, including failure handling through a dead-letter queue (DLQ).
 
-✨ Your new, shiny [Nx workspace](https://nx.dev) is ready ✨.
+## What This Demonstrates
 
-[Learn more about this workspace setup and its capabilities](https://nx.dev/docs/technologies/typescript/introduction?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
+- NestJS microservices communicating through Kafka events
+- An API gateway that publishes a `user_created` event
+- A notification service that consumes the event
+- Failure handling by publishing failed messages to `user_created_dlq`
+- An Nx monorepo structure for running and testing multiple services
+- Kafka running locally with Docker Compose
 
-🚀 If you haven't connected to Nx Cloud yet, [complete your setup here](https://cloud.nx.app/get-started). Get faster builds with remote caching, distributed task execution, and self-healing CI. [See how your workspace can benefit](#nx-cloud).
+## Architecture
 
-## Generate a library
-
-```sh
-npx nx g @nx/js:lib packages/pkg1 --publishable --importPath=@my-org/pkg1
+```text
+HTTP client
+    |
+    v
+API Gateway (:3000)
+    |
+    | user_created
+    v
+Kafka (:9092)
+    |
+    v
+Notification Service
+    |
+    | processing failure
+    v
+user_created_dlq
 ```
 
-## Run tasks
+The notification service intentionally simulates a downstream failure so the DLQ flow can be observed in the service logs.
 
-To build the library use:
+## Tech Stack
 
-```sh
-npx nx run pkg1:build
+- [NestJS](https://nestjs.com/) 11
+- [Apache Kafka](https://kafka.apache.org/) 3.9
+- [KafkaJS](https://kafka.js.org/)
+- [Nx](https://nx.dev/) 23
+- TypeScript
+- Docker Compose
+
+## Project Structure
+
+| Project | Responsibility |
+| --- | --- |
+| `api-gateway` | HTTP entry point; publishes `user_created` |
+| `notification-service` | Consumes `user_created` and publishes DLQ events when processing fails |
+| `api-gateway-e2e` | End-to-end tests for the API gateway |
+| `notification-service-e2e` | End-to-end tests for the notification service |
+| `packages/` | Shared workspace packages |
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 20+
+- npm
+- Docker Desktop with Docker Compose
+
+### Install dependencies
+
+```bash
+npm install
 ```
 
-To run any task with Nx use:
+### Start Kafka
 
-```sh
-npx nx run <project-name>:<target>
+```bash
+docker compose up -d
 ```
 
-These targets are either [inferred automatically](https://nx.dev/docs/concepts/inferred-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or defined in the `project.json` or `package.json` files.
+Kafka will be available at `localhost:9092`.
 
-[More about running tasks in the docs &raquo;](https://nx.dev/docs/features/run-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+### Start the services
 
-## Versioning and releasing
+Run each service in a separate terminal:
 
-To version and release the library use
-
-```
-npx nx release
+```bash
+npx nx serve api-gateway
 ```
 
-Pass `--dry-run` to see what would happen without actually releasing the library.
-
-[Learn more about Nx release &raquo;](https://nx.dev/docs/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Keep TypeScript project references up to date
-
-Nx automatically updates TypeScript [project references](https://www.typescriptlang.org/docs/handbook/project-references.html) in `tsconfig.json` files to ensure they remain accurate based on your project dependencies (`import` or `require` statements). This sync is automatically done when running tasks such as `build` or `typecheck`, which require updated references to function correctly.
-
-To manually trigger the process to sync the project graph dependencies information to the TypeScript project references, run the following command:
-
-```sh
-npx nx sync
+```bash
+npx nx serve notification-service
 ```
 
-You can enforce that the TypeScript project references are always in the correct state when running in CI by adding a step to your CI job configuration that runs the following command:
+The API gateway listens on `http://localhost:3000`. The notification service runs as a Kafka microservice and does not expose an HTTP port.
 
-```sh
-npx nx sync:check
+## Try the Event Flow
+
+Send a request to publish a user-created event:
+
+```bash
+curl http://localhost:3000/create-user
 ```
 
-[Learn more about nx sync](https://nx.dev/reference/nx-commands#sync)
+The API returns the published user payload. In the notification service logs, you can then observe:
 
-## Nx Cloud
+1. The `user_created` event being received.
+2. The simulated processing failure.
+3. A `user_created_dlq` event being published.
+4. The DLQ event being consumed and logged.
 
-Nx Cloud ensures a [fast and scalable CI](https://nx.dev/nx-cloud?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) pipeline. It includes features such as:
+## Useful Commands
 
-- [Remote caching](https://nx.dev/docs/features/ci-features/remote-cache?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task distribution across multiple machines](https://nx.dev/docs/features/ci-features/distribute-task-execution?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Automated e2e test splitting](https://nx.dev/docs/features/ci-features/split-e2e-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task flakiness detection and rerunning](https://nx.dev/docs/features/ci-features/flaky-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+```bash
+# Build both services
+npx nx run-many -t build -p api-gateway,notification-service
 
-### Set up CI (non-Github Actions CI)
+# Run the end-to-end projects
+npx nx run api-gateway-e2e:e2e
+npx nx run notification-service-e2e:e2e
 
-**Note:** This is only required if your CI provider is not GitHub Actions.
-
-Use the following command to configure a CI workflow for your workspace:
-
-```sh
-npx nx g ci-workflow
+# Visualize the Nx project graph
+npx nx graph
 ```
 
-[Learn more about Nx on CI](https://nx.dev/docs/features/ci-features?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+Stop Kafka when finished:
 
-## Install Nx Console
+```bash
+docker compose down
+```
 
-Nx Console is an editor extension that enriches your developer experience. It lets you run tasks, generate code, and improves code autocompletion in your IDE. It is available for VSCode and IntelliJ.
+## Portfolio Notes
 
-[Install Nx Console &raquo;](https://nx.dev/docs/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+This project is intentionally small and focused on demonstrating event-driven design: decoupled services, Kafka topic communication, consumer groups, and a practical failure path using a dead-letter queue.
 
-## 🔗 Learn More
+## License
 
-- [Nx Documentation](https://nx.dev/docs)
-- [Crafting Your Workspace Tutorial](https://nx.dev/docs/getting-started/tutorials/crafting-your-workspace)
-- [Module Boundaries](https://nx.dev/docs/features/enforce-module-boundaries)
-- [Releasing Packages](https://nx.dev/docs/features/manage-releases)
-- [Nx Plugins](https://nx.dev/docs/concepts/nx-plugins)
-- [Nx Cloud](https://nx.dev/nx-cloud)
-
-## 💬 Community
-
-Join the Nx community:
-
-- [Discord](https://go.nx.dev/community)
-- [X (Twitter)](https://twitter.com/nxdevtools)
-- [LinkedIn](https://www.linkedin.com/company/nrwl)
-- [YouTube](https://www.youtube.com/@nxdevtools)
-- [Blog](https://nx.dev/blog)
+This project is licensed under the MIT License.
